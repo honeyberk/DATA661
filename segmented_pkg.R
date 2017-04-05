@@ -17,7 +17,7 @@ df0 <- gold[c("OAT", "Elec")]
 plot(df0)
 
 library(ggplot2)
-ggplot(df0, aes(OAT, Elec, color=OAT)) + geom_point() + theme_bw()
+ggplot(df0, aes(OAT, Elec, color=OAT)) + geom_point() + theme_bw
 
 # Divide OATs into clusters
 (kc <- kmeans(df0, 2)) 
