@@ -7,7 +7,7 @@ library(segmented)
 options(scipen = 999)
 
 library(segmented)
-gold <- read.csv("100gold.csv", header = T)
+gold <- read.csv("gold.csv", header = T)
 head(gold)
 str(gold)
 df0 <- gold[c("OAT", "Elec")]
