@@ -4,6 +4,7 @@ output: html_notebook
 ---
 
 # http://rmarkdown.rstudio.com/r_notebooks.html
+# https://cran.r-project.org/web/packages/gplots/gplots.pdf
 
 Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
 
@@ -21,6 +22,7 @@ plot(df0)
 #### Clusters
 df0 <- gold[c("OAT", "Elec")]
 plot(df0)
+
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.

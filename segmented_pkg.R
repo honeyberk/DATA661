@@ -6,7 +6,6 @@
 library(segmented)
 options(scipen = 999)
 
-library(segmented)
 gold <- read.csv("gold.csv", header = T)
 head(gold)
 str(gold)
@@ -18,7 +17,7 @@ df0 <- gold[c("OAT", "Elec")]
 plot(df0)
 
 library(ggplot2)
-ggplot(df0, aes(OAT, Elec, color=OAT)) + geom_point()
+ggplot(df0, aes(OAT, Elec, color=OAT)) + geom_point() + theme_bw()
 
 # Divide OATs into clusters
 (kc <- kmeans(df0, 2)) 
@@ -155,4 +154,7 @@ plotcluster(mydata, fit$cluster)
 
 
 
+###
 
+library(graphics)
+heatmap(elec)
