@@ -1,0 +1,515 @@
+---
+title: 'DATA 661 - Independent Study: Electric Demand Analysis'
+author: "Honey Berk"
+date: "May 16, 2017"
+output:
+  html_document:
+    fig_height: 6
+    fig_width: 10
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+options(scipen = 999)
+```
+## Introduction
+
+#### In 2007, New York City launched PlaNYC, a plan to create a "greener, greater New York" through the implementation of initiatives in key areas of interest, including energy and climate change. PlaNYC established a goal of reducing citywide greenhouse gas (GHG) emissions by 30 percent below 2005 levels by 2030 (30x30). This called for fundamental change in the way existing buildings are managed and operated. In 2014, NYC Mayor Bill de Blasio released an updated environmental plan for NYC: "One City: Built to Last," which included an increase in the GHG emissions target to an 80% reduction from 2005 GHG levels by 2050.
+
+### NYC GHG Emissions
+#### In 2014, NYC buildings were responsible for 68% of citywide GHG emissions through the use of electricity, natural gas, heating oil, steam and biofuel.
+```{r, sankey}
+
+# Sankey
+
+library(jsonlite)
+library(networkD3)
+
+Energy <- fromJSON('ghgFINAL.json')
+
+# Plot
+networkD3::sankeyNetwork(Links = Energy$links, Nodes = Energy$nodes, Source = "source", 
+                         Target = "target", Value = "value", NodeID = "name",
+                         units = "tCO2e", nodeWidth = 40, width = 900,
+                         colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"),
+                         nodePadding = 50, fontSize = 16, fontFamily = "Helvetica")
+
+```
+
+### NYC GHG Emissions by Sector (2014)
+#### Commercial and institutional buildings comprised about 31% of total emissions in 2014, while residential buildings comprised about 28%.
+```{r, ghg}
+
+library(ggplot2)
+library(scales)
+
+ghg_sector <- data.frame(
+    group = c("Buildings", "Transportation", "Waste"),
+    value = c(68, 28, 04)
+    )
+
+theme_update(plot.title = element_text(hjust = 0.5))
+
+bp <- ggplot(ghg_sector, aes(x="", y=value, fill=group))+
+geom_bar(width = 1, stat = "identity")
+
+pie <- bp + coord_polar("y") + geom_text(aes(label = percent(value/100))) + theme_void()
+
+pie + scale_fill_brewer(palette = "Paired")
+# + ggtitle("NYC GHG Emissions by Sector (2014)")
+
+```
+
+### NYC GHG Emissions from Large Buildings by End Use (2014)
+#### In commercial buildings, electricity represents a large portion of energy consumed, for end uses such as space cooling, ventilation, lighting and plug loads.
+
+```{r, commbldgs}
+
+library(readr)
+library(tidyr)
+
+end_use <- read_csv("end_use.csv")
+end_use2 <- end_use %>%
+  gather(type, use, `Other`:`Space Heating`)
+
+theme_update(plot.title = element_text(hjust = 0.5))
+
+ggplot(end_use2, aes(facility, use, fill = type)) + 
+  geom_bar(stat = "identity") + scale_fill_brewer(palette = "Paired") + 
+  labs(x = "Building Type", y = "", fill  = "End Use") + theme_bw()
+
+```
+
+## Electricity Demand
+
+### What is electricity demand?
+#### Electricity demand refers to the maximum amount of electric energy that is being consumed at one time. Essentially, demand (measured in kilowatts, or kW) measures the speed at which a customer uses energy (like the speedometer in a car), while consumption (measured in kilowatt hours, or kWh) measures how much electricity is used (like the odometer in a car).
+
+### Why forecast electricity demand?
+#### Demand charges account for a significant portion of total electricity costs in commercial buildings. In fact, demand charges are increasing in the U.S., even though  energy prices are decreasing. One reason for this is the aging power grid infrastructure, which increasingly requires maintenance and updates -- costs that are passed on to customers. 
+
+#### The ability to accurately forecast electricity demand can help customers and utilities make sustainable electricity planning decisions to help ensure sufficent electricity supply. Utilities enroll customers in demand response programs to incentivize them to curtail their consumption so that demand on the electric grid can be lowered when demand is higher than supply.
+
+#### Electricity consumption has been growing at an increasing rate due to the effects of both environmental and human behavior. As a result, electricity demand patterns have become more complex and harder to recognize. Researchers have tried numerous forecasting methods, yet no single one has been found to be generalized enough to account for all cases.
+
+## Current Work
+
+#### This study has pursued a number of time series analysis techniques with the goal of finding one that works well for demand forecasting in typical NYC office buildings. The most promising method was implemented via Facebook's Prophet package (R version), which performs what they refer to as "forecasting at scale."
+
+#### According to Facebook, Prophet is based on an additive model where non-linear trends are fit with yearly and weekly seasonality, plus holidays. The model has four main components: 1) a piecewise linear or logistic growth curve trend. (Prophet automatically detects changes in trends by selecting change-points from the data); 2) A yearly seasonal component modeled using Fourier series; 3) a weekly seasonal component using dummy variables; and 4) a user-provided list of important holidays.
+
+#### Following is a synopsis the analysis undertaken for this study.
+
+## Methodology
+
+### Data
+#### The analysis was performed on two sets of electricity demand data from "typical" NYC office buildings. The data was generated at a daily interval, and covered the six-year period from 2011-2016. The data was anonymized to allay privacy concerns.
+
+### Time Series Analysis I: Prophet
+#### The first procedure involved time series analysis and forecasting with Facebook's Prophet package (R version). First, the data was read in and converted to the proper formats. Five years of data (2011-2015) was used as the training set and the actual 2016 data was used to validate the data that was forecasted for 2016.
+```{r}
+
+# setwd("C:/Users/honey.berk/Dropbox (Personal)/MSDA/DATA 661 - Independent Study/DATA661")
+
+library(readr)
+library(prophet)
+library(dplyr)
+library(ggplot2)
+
+df <- read_csv('gold_daily_11-15.csv')
+head(df)
+# str(df)
+
+df$ds <- as.Date(df$ds, "%m/%d/%Y")
+
+summary(df$y)
+
+```
+
+####  The 2011-2015 data was visualized using Highcharter.
+```{r, highcharter}
+
+library(xts)
+library(highcharter)
+dfts <- xts(df$y, as.Date(df$ds, format='%m/%d/%Y'))
+hchart(dfts)
+
+```
+
+#### The Prophet package was used to create a model for 2011-2015, and then to forecast out one year (2016). The Top chart shows the five actual years and one forecasted year; the second chart shows the electric demand trend without seasonality, with the forecasted year and confidence band at the end. The third chart shows the weekly seasonality, where you can see no demand on Sunday, a ramp-up on Monday with pretty consistent demand mid-week, and then a ramp-down to minimal demand on Saturday. The fourth chart shows yearly seasonality, with peak demand over the summer cooling months.
+```{r}
+
+library(zoo)
+
+m <- prophet(df)
+future <- make_future_dataframe(m, periods = 367)
+# tail(future)
+
+forecast <- predict(m, future)
+tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+
+plot(m, forecast)
+
+prophet_plot_components(m, forecast)
+
+```
+
+#### Holiday dates were compiled for each of the five years Add holidays and then the forecast was rerun. Note the third chart down, which is now for the holidays trend, which shows the negative (from baseline) demand for the defined days. There are some small shifts in the trend and yearly charts, though nothing significant. The Facebook team uses the holidays option for forced change-points in the data that would seemingly have a significant effect on the trends -- like the superbowl, if you were to analyze a time series of a quarterback's passes throughout a season.
+```{r}
+
+# Add holidays
+m <- prophet(df)
+future <- make_future_dataframe(m, periods = 367)
+tail(future)
+
+tgiving <- data_frame(
+  holiday = 'tgiving',
+  ds = as.Date(c('2011-11-24', '2012-11-22', '2013-11-28', '2014-11-27', '2015-11-26'))
+)
+xmas <- data_frame(
+  holiday = 'xmas',
+  ds = as.Date(c('2011-12-25', '2012-12-25', '2013-12-25', '2014-12-25', '2015-12-25'))
+)
+newyears <- data_frame(
+  holiday = 'newyears',
+  ds = as.Date(c('2011-01-01', '2012-01-01', '2013-01-01', '2014-01-01', '2015-01-01'))
+)
+july4 <- data_frame(
+  holiday = 'july4',
+  ds = as.Date(c('2011-07-04', '2012-07-04', '2013-07-04', '2014-07-04', '2015-07-04'))
+)
+holidays <- bind_rows(tgiving, xmas, newyears, july4)
+
+m <- prophet(df, holidays = holidays)
+forecast <- predict(m, future)
+
+forecast %>% 
+  select(ds, july4, tgiving, xmas, newyears) %>% 
+  filter(abs(july4 + tgiving + xmas + newyears) > 0) %>%
+  tail(10)
+
+plot(m, forecast)
+
+prophet_plot_components(m, forecast)
+
+```
+
+#### The forecasted data for 2016 was extracted and stored for comparative analysis.
+```{r}
+
+library(ggplot2)
+prophet.fcast16 <- subset(forecast, ds >= "2016-01-01" & ds <= "2016-12-31")
+prophet.fcast16 <- prophet.fcast16[c('ds', 'yhat')]
+head(prophet.fcast16)
+
+act16 <- read_csv("gold_daily_16.csv")
+act16$ds <- as.Date(act16$ds, "%m/%d/%Y")
+
+comp16 <- data.frame(cbind(actual = act16$y, forecast = prophet.fcast16$yhat))
+
+```
+
+### Time Series Analysis II: stR and Forecast
+#### More detailed time series analysis and forecasting was performed on the same dataset, using the stR and Forecast packages from statistican Rob Hyndman, who is well known for his work in forecasting.
+```{r}
+
+library(forecast)
+library(stR)
+library(readr)
+library(imputeTS)
+
+gold <- read_csv('gold_daily_11-15.csv') # GOLD daily data
+df <- ts(gold$y)
+summary(df)
+
+```
+
+#### The time series was analyzed for missing data and data imputation was performed.
+```{r, imputation}
+
+# Data imputation
+plotNA.distribution(df)
+statsNA(df)
+df <- tsclean(df, replace.missing = TRUE, lambda = NULL)
+plotNA.distribution(df)
+
+```
+
+#### The data was convert to multi-seasonal time series format, with weekly and yearly seasonal periods defined.
+```{r}
+
+gold.msts <- msts((as.vector(df)),
+                  seasonal.periods=c(1*7,1*7*4.35*12),
+                  start=2011+1/(52))
+
+plot(gold.msts, ylab = "Electricity demand")
+
+```
+
+#### Automatic Robust Seasonal-Trend decomposition (STR) was used to model the time series (Robust STR handle outliers better); data was plotted with 95% confidence level bands.
+```{r}
+
+gold.fit <- AutoSTR(gold.msts, confidence = 0.95, robust = F)
+plot(gold.fit)
+
+```
+
+#### Model components were extracted and the beta coefficients of the forecast were plotted. If beta coefficients are too "wiggly," it can mean that the forecast is suboptimal. The basic trend in the first chart is clearly defined and shows a decrease; the bands in the weekly and yearly seasonality charts are basically smooth.
+```{r}
+
+# Extract components
+comp.gold.fit <- components(gold.fit)
+head(comp.gold.fit)
+
+# Generate beta plots
+for(i in 1:3) plotBeta(gold.fit, predictorN = i, dim = 2)
+
+```
+
+### Forecasting
+#### Multiple forecasting methods were implemented in an effort to find the one most appropriate for the dataset under analysis; results can be seen below for forecasting using: 1) Mean; 2) Naive; 3) Random Walk; and 4) Random Walk with Drift. As you can see, the forecasts from these methods are nearly flat, so it can be seen that they do not properly capture the seasonality and trend of the data.
+```{r, evaluate = F}
+
+library(forecast)
+
+par(mfrow = c(2,2))
+plot(meanf(gold.msts,h=365)) # mean forecasting
+plot(naive(gold.msts,h=365)) # naive forecasting
+plot(rwf(gold.msts,h=365)) # random walk forecasting
+plot(rwf(gold.msts,drift=TRUE,h=365)) # rw drift
+
+```
+
+#### Further attempts at forecasting proved to be more successful. First, a Seasonal Naive method was used, which employs a seasonal ARIMA(0,0,0)(0,1,0)m model (where m is the seasonal period).
+```{r, snaive}
+
+par(mfrow = c(1,1))
+snaive.fcast <- snaive(gold.msts,h=365) # seasonal naive forecasting
+# head(snaive.fcast$x)
+plot(snaive.fcast)
+
+```
+
+#### Next was the Theta method, which was introduced by Assimakopoulos and Nikolopoulos (2000).
+```{r, theta}
+
+theta.fcast <- thetaf(gold.msts,h=365)  # theta method forecast
+# head(theta.fcast$x)
+plot(theta.fcast)
+
+```
+
+#### The last method tested was based on STL (Seasonal and Trend decomposition using Loess) decomposition, which takes a time series object, applies an STL decomposition, models the seasonally adjusted data, then re-seasonalizes using the last year of the seasonal component. The forecast is then based on the seasonally-adjusted object.
+```{r}
+
+stl.fit <- stl(gold.msts, s.window = "periodic") # seasonal decomposition
+{plot(stl.fit)
+title(main = "Seasonal Decomposition using Loess (STL)")}
+
+plot(fstl.fit <- forecast.stl(stl.fit, h=365))
+
+```
+
+### Results
+#### Forecasted data for 2016 was extracted from each of the successful models, and were combined with actual 2016 data.
+```{r}
+
+actual16 <- (act16$y[1:365])
+prophet16 <- (prophet.fcast16$yhat[1:365])
+snaive16 <- as.numeric(snaive.fcast$mean)
+theta16 <- as.numeric(theta.fcast$mean)
+stl16 <- as.numeric(fstl.fit$mean)
+
+comp.fcasts <- data.frame(actual16, prophet16, snaive16, theta16, stl16)
+colnames(comp.fcasts) <- c("Actual", "Prophet", "Seasonal Naive", "Theta", "STL")
+head(comp.fcasts)
+
+```
+
+#### A correlation matrix was generated to examine correlations between actual and forecasted datasets.
+```{r}
+
+library(corrplot)
+corrs <- cor(comp.fcasts)
+corrplot.mixed(corrs, lower = "pie", upper = "number")
+
+```
+
+#### Actual and forecasted datasets were plotted.
+```{r}
+
+{plot(actual16, main="",ylab="", xlab="Day")
+lines(prophet16, col=4)
+lines(snaive16, col=2)
+lines(theta16, col=3)
+lines(stl16, col = 6)
+lines(actual16)
+legend("topleft", lty=1, col=c(4,2,3,6),
+  legend=c("Prophet","Seasonal Naive","Theta","STL"))}
+
+```
+
+#### Statistics were generated to compare the accuracy of the forecasted datasets: 1) ME: Mean Error; 2) RMSE: Root Mean Squared Error; 3) MAE: Mean Absolute Error; 4) MPE: Mean Percentage Error; and 5) MAPE: Mean Absolute Percentage Error.
+```{r}
+
+library(forecast)
+prophet <- accuracy(prophet16, actual16)
+snaive <- accuracy(snaive16, actual16)
+theta <- accuracy(theta16, actual16)
+stl <- accuracy(stl16, actual16)
+
+results <- data.frame(prophet)
+results <- rbind(results, snaive)
+results <- rbind(results, theta)
+results <- rbind(results, stl)
+rownames(results) <- c("Prophet", "SNaive", "Theta", "STL")
+results
+
+```
+
+#### Although it does not rank best for every metric generated, the data forecasted using the prophet package does rank best for most -- including the RMSE and MAE. The MAE is often used for comparison, as it is easy to comprehend and to calculate.
+
+## Replication
+#### Prophet was used to analyze and forecast for a second dataset, using the exact procedure described earlier.
+
+#### Read in electric demand data (2011-15).
+```{r}
+
+library(prophet)
+library(dplyr)
+library(ggplot2)
+
+df2 <- read_csv('bhc_daily_11-15.csv')
+head(df2)
+
+df2$ds <- as.Date(df2$ds, "%m/%d/%Y")
+
+summary(df2$y)
+
+```
+
+#### Chart time series data.
+```{r}
+
+library(xts)
+library(highcharter)
+dfts2 <- xts(df2$y, as.Date(df2$ds, format='%m/%d/%Y'))
+hchart(dfts2)
+
+```
+
+#### Use Prophet package to create forecast (with holidays).
+```{r}
+
+library(zoo)
+
+# Add holidays
+m2 <- prophet(df2)
+future2 <- make_future_dataframe(m2, periods = 367)
+tail(future2)
+
+tgiving <- data_frame(
+  holiday = 'tgiving',
+  ds = as.Date(c('2011-11-24', '2012-11-22', '2013-11-28', '2014-11-27', '2015-11-26'))
+)
+xmas <- data_frame(
+  holiday = 'xmas',
+  ds = as.Date(c('2011-12-25', '2012-12-25', '2013-12-25', '2014-12-25', '2015-12-25'))
+)
+newyears <- data_frame(
+  holiday = 'newyears',
+  ds = as.Date(c('2011-01-01', '2012-01-01', '2013-01-01', '2014-01-01', '2015-01-01'))
+)
+july4 <- data_frame(
+  holiday = 'july4',
+  ds = as.Date(c('2011-07-04', '2012-07-04', '2013-07-04', '2014-07-04', '2015-07-04'))
+)
+holidays <- bind_rows(tgiving, xmas, newyears, july4)
+
+m2 <- prophet(df2, holidays = holidays)
+forecast2 <- predict(m2, future)
+
+forecast2 %>% 
+  select(ds, july4, tgiving, xmas, newyears) %>% 
+  filter(abs(july4 + tgiving + xmas + newyears) > 0) %>%
+  tail(10)
+
+plot(m2, forecast2)
+
+prophet_plot_components(m2, forecast2)
+
+```
+
+#### Extract 2016 forecasted data from forecast for comparative purposes.
+```{r}
+
+library(ggplot2)
+prophet2.fcast16 <- subset(forecast2, ds >= "2016-01-01" & ds <= "2016-12-31")
+prophet2.fcast16 <- prophet2.fcast16[c('ds', 'yhat')]
+head(prophet2.fcast16)
+
+act162 <- read_csv("bhc_daily_16.csv")
+act162$ds <- as.Date(act162$ds, "%m/%d/%Y")
+
+comp162 <- data.frame(cbind(actual2 = act162$y, forecast2 = prophet2.fcast16$yhat))
+head(comp162)
+
+```
+
+#### Combine forecasted and actual 2016 data.
+```{r}
+
+actual162 <- (act162$y[1:365])
+prophet162 <- (prophet2.fcast16$yhat[1:365])
+
+comp2.fcasts <- data.frame(actual162, prophet162)
+head(comp2.fcasts)
+
+```
+
+#### Check correlations between actual and forecasted datasets.
+```{r}
+
+library(corrplot)
+corrs <- cor(comp2.fcasts)
+corrplot.mixed(corrs, lower = "pie", upper = "number")
+
+```
+
+#### Plot actual and forecasted data.
+```{r}
+
+{plot(actual162, main="",ylab="", xlab="Day")
+lines(prophet162, col=4)
+lines(actual162)
+legend("topleft", lty=1, col=c(4),
+  legend=c("Prophet"))}
+
+```
+
+#### Generate statistics to measure accuracy of forecasted dataset.
+```{r}
+
+library(forecast)
+print(prophet <- accuracy(prophet162, actual162))
+
+```
+
+## References
+
+City of New York, "One City Built to Last". 2014. Retrieved from http://www.nyc.gov/html/builttolast/assets/downloads/pdf/OneCity.pdf.
+
+Dokumentov, A and Hyndman, RJ (2017). stR: STR Decomposition. R package version 0.3. https://CRAN.R-project.org/package=stR.
+
+"Evaluating Forecast Accuracy." OTexts. N.p., n.d. Web. 16 May 2017.
+
+Hyndman, RJ (2017). forecast: Forecasting functions for time series and linear models. R package version 8.0, http://github.com/robjhyndman/forecast.
+
+Hyndman, RJ and Khandakar Y (2008). "Automatic time series forecasting: the forecast package for R." _Journal of Statistical Software_, *26*(3), pp. 1-22. http://www.jstatsoft.org/article/view/v027i03.
+
+Kunst, J (2017). highcharter: A Wrapper for the 'Highcharts' Library. R package version 0.5.0. https://CRAN.R-project.org/package=highcharter.
+
+Taylor, S and Letham, B (2017). prophet: Automatic Forecasting Procedure. R package version 0.1.1. https://CRAN.R-project.org/package=prophet.
+  
+  
